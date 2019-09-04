@@ -17,7 +17,15 @@ bundler install
 
 To determine if you've gotten it (mostly) set up correctly, you should be able to run ```rails c```, and get dropped into a console. If you get any errors, something isn't installed correctly - the biggest culprits tend to be gems that require native extensions (generally, C libraries and a compiler) before installing. If you get an error for one of these, I suggest googling it - the solution almost always consists of apt-getting some library, then running ```bundle install``` again. Afterwards, you should also be able to browse to the home page (after running ```rails s```, to actually launch a web server), search for a transaction / block, and more. You won't be able to search by address for a while, until the explorer has finished indexing all relevant transactions - this process can take several days or weeks to complete, depending on the cryptocurrency, but most other functionality will work just fine.
 
-To create the database, you'll need to run ```rails db:structure:load```. This will create an empty database for you, along with the indexes required to do fast searches by address, UTXO, and more. Ensure that you've set up a config/application.yml file (from below) before running this command, otherwise it won't have a DB to actually write to.
+To create the database, you'll need to run ```rails db:structure:load```. This will create an empty database for you, along with the indexes required to do fast searches by address, UTXO, and more. Ensure that you've set up a config/application.yml file (from below) before running this command, otherwise it won't have a DB to actually write to. 
+
+Follow this excellent guide to installing PostgreSQL (https://www.digitalocean.com/community/tutorials/how-to-install-and-use-postgresql-on-ubuntu-16-04). A couple of notes though - when you create the user using the command
+
+```
+sudo -u postgres createuser --interactive
+```
+
+Choose ```Y``` to allow the user to create new databases. This user name is what needs to be added to the application.yml file.
 
 Once it's running, you'll need to have it index the blockchain, in order to browse /address/ pages, or use the UTXO / balance APIs. Since the initial index will take a while, I suggest running:
 
@@ -41,6 +49,36 @@ This will effectively tell it to run as fast as it can, indexing every block it 
 The indexer ensures that new blocks are automatically indexed as they come in, and old blocks are automatically indexed when the site notices that they're missing. It is perfectly fine if the process of indexing is interrupted, as relaunching the indexer will delete any incomplete work (half-finished blocks) before attempting that block again.
 
 If you don't want to keep a terminal open to run the site (```rails s```, on port 3000), I suggest setting up Phusion Passenger and Nginx, which seems to be the preferred way to run Rails sites (https://www.phusionpassenger.com/library/install/nginx/install/oss/xenial/).
+
+An alternate that is currently in use for Indiocoin is to run rails server as a daemon and setup nginx to reverse proxy requests to port 3000. To run rails server as a daemon
+
+```rails -s -d```
+
+Once you setup nginx similar to the configuration below (modified from the Passenger example)
+
+```
+   server {
+        server_name server.name www.server.name;
+
+        # Tells Nginx to serve static assets from this directory.
+        # This is the location of the public folder where you cloned the repo into
+        root /home/youruser/explorer/public;
+
+        location / {
+            # Tells Nginx to forward all requests for www.server.name
+            proxy_pass http://127.0.0.1:3000;
+
+            # These are "magic" Nginx configuration options that
+            # should be present in order to make the reverse proxying
+            # work properly. 
+            proxy_http_version 1.1;
+            proxy_set_header Host $http_host;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_buffering off;
+        }
+```
+
+you can also setup Let's Encrypt to serve the explorer over https:// (it is 2019, no one should serve content over http even if it is simple public information). To setup SSL, we will use the scripts provided here https://certbot.eff.org/lets-encrypt/ubuntuxenial-nginx. The script automatically updates the nginx configuration file, so no more changes required.
 
 ## Missing Transactions:
 
@@ -83,6 +121,8 @@ rpcthreads=8
 rpcworkqueue=160
 rpctimeout=300
 ```
+
+The txindex=1 is important, else your explorer will fail to display address balances. If you are already running the daemon without the txindex option, the default txindex=0 will cause problems. Stop the daemon (usually with the *-cli command). Restart the daemon with ```--reindex``` option. 
 
 And here's a sample ```config/application.yml``` - replace values as necessary: 
 
